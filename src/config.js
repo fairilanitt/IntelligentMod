@@ -9,13 +9,13 @@
 
 require('dotenv').config();
 
-const REQUIRED = ['DISCORD_TOKEN', 'CLIENT_ID'];
+const REQUIRED = ['DISCORD_TOKEN', 'CLIENT_ID', 'GEMINI_API_KEY'];
 
 const missing = REQUIRED.filter((key) => !process.env[key]);
 if (missing.length) {
   console.error(
     `❌  Missing required environment variables: ${missing.join(', ')}\n` +
-      '   Copy .env.example → .env and fill in the values.'
+    '   Copy .env.example → .env and fill in the values.'
   );
   process.exit(1);
 }
@@ -33,6 +33,9 @@ const config = Object.freeze({
    * When empty, commands are registered globally (up to 1 h propagation).
    */
   guildId: process.env.GUILD_ID || null,
+
+  /** Gemini API key for AI moderation */
+  geminiApiKey: process.env.GEMINI_API_KEY,
 });
 
 module.exports = config;
