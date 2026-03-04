@@ -1,6 +1,7 @@
 /**
  * Event: messageCreate
  * Analyzes the FIRST message of newly joined members using Gemini AI.
+ * Posts status embeds to #automod throughout the analysis flow.
  * If the AI flags the message as unsafe, the bot deletes it, times out
  * the user, and logs the action to #automod.
  */
@@ -29,15 +30,54 @@ module.exports = {
         // Clear immediately so we only analyze one message per join
         clearPending(guildId, userId);
 
+        const automod = message.guild.channels.cache.find(
+            (ch) => ch.name === AUTOMOD_CHANNEL_NAME && ch.isTextBased()
+        );
+
+        // --- Status 1: First message detected, starting analysis ---
+        const pendingEmbed = new EmbedBuilder()
+            .setColor(0x3498db)
+            .setTitle('First Message Detected')
+            .setDescription('Running AI analysis...')
+            .addFields(
+                { name: 'User', value: `${message.author.tag} (${userId})`, inline: true },
+                { name: 'Channel', value: `#${message.channel.name}`, inline: true },
+                { name: 'Message', value: message.content.slice(0, 1024) || '(empty)' }
+            )
+            .setTimestamp();
+
+        let statusMessage = null;
+        if (automod) {
+            statusMessage = await automod.send({ embeds: [pendingEmbed] }).catch(() => null);
+        }
+
+        // --- Run AI analysis ---
         const { safe, raw } = await analyzeFirstMessage(
             message.content,
             message.author.tag
         );
 
-        // Safe message — no action needed
-        if (safe) return;
+        // --- Status 2: Show result ---
+        if (safe) {
+            const safeEmbed = new EmbedBuilder()
+                .setColor(0x2ecc71)
+                .setTitle('First Message Cleared')
+                .addFields(
+                    { name: 'User', value: `${message.author.tag} (${userId})`, inline: true },
+                    { name: 'Channel', value: `#${message.channel.name}`, inline: true },
+                    { name: 'AI Verdict', value: raw, inline: true },
+                    { name: 'Message', value: message.content.slice(0, 1024) || '(empty)' },
+                    { name: 'Action', value: 'None - message is safe' }
+                )
+                .setTimestamp();
 
-        // --- Unsafe message: take action ---
+            if (statusMessage) {
+                await statusMessage.edit({ embeds: [safeEmbed] }).catch(() => { });
+            }
+            return;
+        }
+
+        // --- Unsafe: take action ---
 
         // 1. Delete the message
         await message.delete().catch(() => { });
@@ -53,14 +93,8 @@ module.exports = {
                 .catch(() => { });
         }
 
-        // 3. Log to #automod
-        const automod = message.guild.channels.cache.find(
-            (ch) => ch.name === AUTOMOD_CHANNEL_NAME && ch.isTextBased()
-        );
-
-        if (!automod) return;
-
-        const embed = new EmbedBuilder()
+        // 3. Update status embed with result
+        const flaggedEmbed = new EmbedBuilder()
             .setColor(0xe74c3c)
             .setTitle('First Message Flagged')
             .addFields(
@@ -72,6 +106,10 @@ module.exports = {
             )
             .setTimestamp();
 
-        await automod.send({ embeds: [embed] }).catch(() => { });
+        if (statusMessage) {
+            await statusMessage.edit({ embeds: [flaggedEmbed] }).catch(() => { });
+        } else if (automod) {
+            await automod.send({ embeds: [flaggedEmbed] }).catch(() => { });
+        }
     },
 };
