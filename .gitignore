@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Environment (NEVER commit real secrets)
+.env
+
+# Logs
+*.log
+logs/
+
+# OS junk
+Thumbs.db
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
