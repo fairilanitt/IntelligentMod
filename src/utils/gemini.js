@@ -6,7 +6,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const config = require('../config');
 
 const genAI = new GoogleGenerativeAI(config.geminiApiKey);
-const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash' });
+const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite-preview' });
 
 /**
  * Analyze a new member's first message.
