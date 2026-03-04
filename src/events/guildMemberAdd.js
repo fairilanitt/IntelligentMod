@@ -1,11 +1,11 @@
 /**
  * Event: guildMemberAdd
  * Sends a notification embed to #automod when a new user joins.
- * Registers the member for first-message AI analysis.
+ * Inserts the user into the SQLite verification database as unverified.
  */
 
 const { Events, EmbedBuilder } = require('discord.js');
-const { markPending } = require('../utils/newMembers');
+const { addJoiner } = require('../utils/database');
 
 const AUTOMOD_CHANNEL_NAME = 'automod';
 
@@ -14,8 +14,8 @@ module.exports = {
     once: false,
 
     async execute(member) {
-        // Register for first-message analysis
-        markPending(member.guild.id, member.id);
+        // Insert into DB as unverified
+        addJoiner(member.id, member.guild.id);
 
         const channel = member.guild.channels.cache.find(
             (ch) => ch.name === AUTOMOD_CHANNEL_NAME && ch.isTextBased()
@@ -48,4 +48,3 @@ module.exports = {
         await channel.send({ embeds: [embed] }).catch(() => { });
     },
 };
-

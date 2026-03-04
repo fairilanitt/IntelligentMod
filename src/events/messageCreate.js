@@ -1,13 +1,12 @@
 /**
  * Event: messageCreate
- * Analyzes the FIRST message of newly joined members using Gemini AI.
+ * Analyzes the FIRST message of unverified members using Gemini AI.
  * Posts status embeds to #automod throughout the analysis flow.
- * If the AI flags the message as unsafe, the bot deletes it, times out
- * the user, and logs the action to #automod.
+ * Marks the user as verified in the database after analysis.
  */
 
 const { Events, EmbedBuilder } = require('discord.js');
-const { isPending, clearPending } = require('../utils/newMembers');
+const { isUnverified, markVerified } = require('../utils/database');
 const { analyzeFirstMessage } = require('../utils/gemini');
 
 const AUTOMOD_CHANNEL_NAME = 'automod';
@@ -24,11 +23,8 @@ module.exports = {
         const guildId = message.guild.id;
         const userId = message.author.id;
 
-        // Only process if this user is pending first-message analysis
-        if (!isPending(guildId, userId)) return;
-
-        // Clear immediately so we only analyze one message per join
-        clearPending(guildId, userId);
+        // Only process if this user is in the DB and unverified
+        if (!isUnverified(userId, guildId)) return;
 
         const automod = message.guild.channels.cache.find(
             (ch) => ch.name === AUTOMOD_CHANNEL_NAME && ch.isTextBased()
@@ -57,8 +53,10 @@ module.exports = {
             message.author.tag
         );
 
-        // --- Status 2: Show result ---
         if (safe) {
+            // Mark verified in the database
+            markVerified(userId, guildId);
+
             const safeEmbed = new EmbedBuilder()
                 .setColor(0x2ecc71)
                 .setTitle('First Message Cleared')
@@ -67,7 +65,7 @@ module.exports = {
                     { name: 'Channel', value: `#${message.channel.name}`, inline: true },
                     { name: 'AI Verdict', value: raw, inline: true },
                     { name: 'Message', value: message.content.slice(0, 1024) || '(empty)' },
-                    { name: 'Action', value: 'None - message is safe' }
+                    { name: 'Action', value: 'None - user is now AI verified' }
                 )
                 .setTimestamp();
 
@@ -77,7 +75,7 @@ module.exports = {
             return;
         }
 
-        // --- Unsafe: take action ---
+        // --- Unsafe: take action (do NOT mark as verified) ---
 
         // 1. Delete the message
         await message.delete().catch(() => { });

@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Data (SQLite databases)
+data/
+
 # Environment (NEVER commit real secrets)
 .env
 
