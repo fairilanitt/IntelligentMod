@@ -6,10 +6,8 @@
  */
 
 const { Events, EmbedBuilder } = require('discord.js');
-const { isUnverified, markVerified } = require('../utils/database');
+const { isUnverified, markVerified, getSettings } = require('../utils/database');
 const { analyzeFirstMessage } = require('../utils/gemini');
-
-const AUTOMOD_CHANNEL_NAME = 'automod';
 
 module.exports = {
     name: Events.MessageCreate,
@@ -26,8 +24,12 @@ module.exports = {
         // Only process if this user is in the DB and unverified
         if (!isUnverified(userId, guildId)) return;
 
+        // Check guild settings
+        const settings = getSettings(guildId);
+        if (!settings.ai_moderation) return;
+
         const automod = message.guild.channels.cache.find(
-            (ch) => ch.name === AUTOMOD_CHANNEL_NAME && ch.isTextBased()
+            (ch) => ch.name === settings.automod_channel && ch.isTextBased()
         );
 
         // --- Status 1: First message detected, starting analysis ---
@@ -63,7 +65,7 @@ module.exports = {
                 .addFields(
                     { name: 'User', value: `${message.author.tag} (${userId})`, inline: true },
                     { name: 'Channel', value: `#${message.channel.name}`, inline: true },
-                    { name: 'AI Verdict', value: raw, inline: true },
+                    { name: 'AI Verdict', value: 'This message was deemed as safe.', inline: true },
                     { name: 'Message', value: message.content.slice(0, 1024) || '(empty)' },
                     { name: 'Action', value: 'None - user is now AI verified' }
                 )
@@ -87,7 +89,7 @@ module.exports = {
 
         if (member && member.moderatable) {
             await member
-                .timeout(24 * 60 * 60 * 1000, 'AI flagged first message as unsafe')
+                .timeout(settings.timeout_duration, 'AI flagged first message as unsafe')
                 .catch(() => { });
         }
 
@@ -98,7 +100,7 @@ module.exports = {
             .addFields(
                 { name: 'User', value: `${message.author.tag} (${userId})`, inline: true },
                 { name: 'Channel', value: `#${message.channel.name}`, inline: true },
-                { name: 'AI Verdict', value: raw, inline: true },
+                { name: 'AI Verdict', value: 'This message was deemed as harmful.', inline: true },
                 { name: 'Message Content', value: message.content.slice(0, 1024) || '(empty)' },
                 { name: 'Action Taken', value: 'Message deleted, user timed out for 24h' }
             )

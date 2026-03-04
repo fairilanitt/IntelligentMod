@@ -5,9 +5,7 @@
  */
 
 const { Events, EmbedBuilder } = require('discord.js');
-const { addJoiner } = require('../utils/database');
-
-const AUTOMOD_CHANNEL_NAME = 'automod';
+const { addJoiner, getSettings } = require('../utils/database');
 
 module.exports = {
     name: Events.GuildMemberAdd,
@@ -17,8 +15,9 @@ module.exports = {
         // Insert into DB as unverified
         addJoiner(member.id, member.guild.id);
 
+        const settings = getSettings(member.guild.id);
         const channel = member.guild.channels.cache.find(
-            (ch) => ch.name === AUTOMOD_CHANNEL_NAME && ch.isTextBased()
+            (ch) => ch.name === settings.automod_channel && ch.isTextBased()
         );
 
         if (!channel) return;
