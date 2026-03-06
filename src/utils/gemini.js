@@ -1,20 +1,47 @@
 /**
  * Gemini AI utility — thin wrapper around @google/generative-ai.
+ *
+ * Supports a global (bot-owner) key and optional per-guild keys.
+ * When a guild supplies its own key, it gets its own model instance
+ * and is exempt from the shared rate limit.
  */
 
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const config = require('../config');
 
-const genAI = new GoogleGenerativeAI(config.geminiApiKey);
-const model = genAI.getGenerativeModel({ model: 'gemini-3.1-flash-lite-preview' });
+const MODEL_NAME = 'gemini-3.1-flash-lite-preview';
+
+// Global instance (bot-owner key)
+const globalGenAI = new GoogleGenerativeAI(config.geminiApiKey);
+const globalModel = globalGenAI.getGenerativeModel({ model: MODEL_NAME });
+
+// Cache per-guild model instances so we don't recreate them on every call
+/** @type {Map<string, import('@google/generative-ai').GenerativeModel>} */
+const guildModels = new Map();
+
+/**
+ * Get the model instance for a guild.
+ * Uses the guild's own key if provided, otherwise the global key.
+ */
+function getModel(guildApiKey) {
+    if (!guildApiKey) return globalModel;
+
+    if (!guildModels.has(guildApiKey)) {
+        const genAI = new GoogleGenerativeAI(guildApiKey);
+        guildModels.set(guildApiKey, genAI.getGenerativeModel({ model: MODEL_NAME }));
+    }
+
+    return guildModels.get(guildApiKey);
+}
 
 /**
  * Analyze a new member's first message.
- * Returns { safe: boolean, raw: string }.
- *  - safe = true  → message looks legitimate, no action needed.
- *  - safe = false → message is suspicious, moderation action should be taken.
+ * @param {string} messageContent
+ * @param {string} username
+ * @param {string|null} [guildApiKey] Optional per-guild API key.
+ * @returns {Promise<{ safe: boolean, raw: string }>}
  */
-async function analyzeFirstMessage(messageContent, username) {
+async function analyzeFirstMessage(messageContent, username, guildApiKey = null) {
     const prompt = [
         'You are a Discord server moderation assistant.',
         'A user who just joined the server has sent their very first message.',
@@ -37,6 +64,7 @@ async function analyzeFirstMessage(messageContent, username) {
     ].join('\n');
 
     try {
+        const model = getModel(guildApiKey);
         const result = await model.generateContent(prompt);
         const raw = result.response.text().trim();
         const safe = raw.toLowerCase().startsWith('yes');

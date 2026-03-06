@@ -40,9 +40,17 @@ db.exec(`
     guild_id         TEXT PRIMARY KEY NOT NULL,
     ai_moderation    INTEGER NOT NULL DEFAULT 1,
     automod_channel  TEXT    NOT NULL DEFAULT 'automod',
-    timeout_duration INTEGER NOT NULL DEFAULT 86400000
+    timeout_duration INTEGER NOT NULL DEFAULT 86400000,
+    gemini_api_key   TEXT    DEFAULT NULL
   )
 `);
+
+// Migration: add gemini_api_key column if upgrading from older schema
+try {
+  db.exec(`ALTER TABLE guild_settings ADD COLUMN gemini_api_key TEXT DEFAULT NULL`);
+} catch (_) {
+  // Column already exists — ignore
+}
 
 /* ------------------------------------------------------------------ */
 /*  Prepared statements                                                */
@@ -146,18 +154,20 @@ const stmtGetSettings = db.prepare(`
 `);
 
 const stmtUpsertSettings = db.prepare(`
-  INSERT INTO guild_settings (guild_id, ai_moderation, automod_channel, timeout_duration)
-  VALUES (?, ?, ?, ?)
+  INSERT INTO guild_settings (guild_id, ai_moderation, automod_channel, timeout_duration, gemini_api_key)
+  VALUES (?, ?, ?, ?, ?)
   ON CONFLICT(guild_id) DO UPDATE SET
     ai_moderation    = excluded.ai_moderation,
     automod_channel  = excluded.automod_channel,
-    timeout_duration = excluded.timeout_duration
+    timeout_duration = excluded.timeout_duration,
+    gemini_api_key   = excluded.gemini_api_key
 `);
 
 const DEFAULTS = {
   ai_moderation: 1,
   automod_channel: 'automod',
   timeout_duration: 86400000, // 24h in ms
+  gemini_api_key: null,
 };
 
 /** Get guild settings, returning defaults if none are stored. */
@@ -172,8 +182,15 @@ function saveSettings(guildId, settings) {
     guildId,
     merged.ai_moderation,
     merged.automod_channel,
-    merged.timeout_duration
+    merged.timeout_duration,
+    merged.gemini_api_key
   );
+}
+
+/** Returns true if this guild has a custom Gemini API key set. */
+function hasCustomKey(guildId) {
+  const s = getSettings(guildId);
+  return !!s.gemini_api_key;
 }
 
 module.exports = {
@@ -187,4 +204,5 @@ module.exports = {
   deleteUser,
   getSettings,
   saveSettings,
+  hasCustomKey,
 };

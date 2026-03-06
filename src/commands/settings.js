@@ -6,6 +6,7 @@
  *   aimoderation <on|off>     — Toggle AI first-message moderation.
  *   channel <name>            — Set the automod log channel name.
  *   timeout <duration>        — Set the timeout duration for flagged users.
+ *   apikey <key|clear>        — Set or clear a custom Gemini API key.
  */
 
 const {
@@ -14,6 +15,7 @@ const {
     EmbedBuilder,
 } = require('discord.js');
 const { getSettings, saveSettings } = require('../utils/database');
+const { peek } = require('../utils/rateLimiter');
 
 const TIMEOUT_CHOICES = [
     { name: '5 minutes', value: '300000' },
@@ -70,6 +72,17 @@ module.exports = {
                         .addChoices(...TIMEOUT_CHOICES)
                 )
         )
+        .addSubcommand((sub) =>
+            sub
+                .setName('apikey')
+                .setDescription('Set or clear a custom Gemini API key (removes rate limit)')
+                .addStringOption((opt) =>
+                    opt
+                        .setName('key')
+                        .setDescription('Your Gemini API key, or "clear" to remove')
+                        .setRequired(true)
+                )
+        )
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 
     async execute(interaction) {
@@ -81,6 +94,9 @@ module.exports = {
             const timeoutLabel =
                 TIMEOUT_CHOICES.find((c) => c.value === String(settings.timeout_duration))?.name ??
                 `${settings.timeout_duration}ms`;
+
+            const hasKey = !!settings.gemini_api_key;
+            const usage = peek(guildId);
 
             const embed = new EmbedBuilder()
                 .setColor(0x5865f2)
@@ -99,6 +115,16 @@ module.exports = {
                     {
                         name: 'Timeout Duration',
                         value: timeoutLabel,
+                        inline: true,
+                    },
+                    {
+                        name: 'Custom API Key',
+                        value: hasKey ? 'Set (rate limit bypassed)' : 'Not set',
+                        inline: true,
+                    },
+                    {
+                        name: 'Rate Limit Usage',
+                        value: hasKey ? 'N/A (custom key)' : `${usage.used}/${usage.max} this hour`,
                         inline: true,
                     }
                 );
@@ -140,6 +166,24 @@ module.exports = {
 
             return interaction.reply({
                 content: `Timeout duration set to **${label}**.`,
+                ephemeral: true,
+            });
+        }
+
+        if (sub === 'apikey') {
+            const key = interaction.options.getString('key').trim();
+
+            if (key.toLowerCase() === 'clear') {
+                saveSettings(guildId, { gemini_api_key: null });
+                return interaction.reply({
+                    content: 'Custom API key has been **cleared**. This server will now use the shared key with rate limiting.',
+                    ephemeral: true,
+                });
+            }
+
+            saveSettings(guildId, { gemini_api_key: key });
+            return interaction.reply({
+                content: 'Custom Gemini API key has been **set**. Rate limiting is now bypassed for this server.',
                 ephemeral: true,
             });
         }

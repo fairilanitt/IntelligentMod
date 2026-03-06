@@ -3,11 +3,15 @@
  * Analyzes the FIRST message of unverified members using Gemini AI.
  * Posts status embeds to #automod throughout the analysis flow.
  * Marks the user as verified in the database after analysis.
+ *
+ * Rate limiting: guilds using the shared (global) API key are limited
+ * to 20 AI checks per hour. Guilds with their own API key bypass this.
  */
 
 const { Events, EmbedBuilder } = require('discord.js');
-const { isUnverified, markVerified, getSettings } = require('../utils/database');
+const { isUnverified, markVerified, getSettings, hasCustomKey } = require('../utils/database');
 const { analyzeFirstMessage } = require('../utils/gemini');
+const { consume, peek } = require('../utils/rateLimiter');
 
 module.exports = {
     name: Events.MessageCreate,
@@ -28,11 +32,42 @@ module.exports = {
         const settings = getSettings(guildId);
         if (!settings.ai_moderation) return;
 
+        const guildHasKey = hasCustomKey(guildId);
+
+        // Rate limiting — only applies when using the shared global key
+        if (!guildHasKey) {
+            const limit = consume(guildId);
+            if (!limit.allowed) {
+                const automod = message.guild.channels.cache.find(
+                    (ch) => ch.name === settings.automod_channel && ch.isTextBased()
+                );
+                if (automod) {
+                    const resetMin = Math.ceil(limit.resetInMs / 60000);
+                    const embed = new EmbedBuilder()
+                        .setColor(0x95a5a6)
+                        .setTitle('Rate Limit Reached')
+                        .setDescription(
+                            `This server has used all 20 AI checks for this hour.\n` +
+                            `Resets in approximately ${resetMin} minute(s).\n\n` +
+                            `Server admins can set a custom API key via \`/settings apikey\` to remove this limit.`
+                        )
+                        .setTimestamp();
+                    await automod.send({ embeds: [embed] }).catch(() => { });
+                }
+                return;
+            }
+        }
+
         const automod = message.guild.channels.cache.find(
             (ch) => ch.name === settings.automod_channel && ch.isTextBased()
         );
 
         // --- Status 1: First message detected, starting analysis ---
+        const usageInfo = guildHasKey ? 'Custom API key' : (() => {
+            const p = peek(guildId);
+            return `${p.used}/${p.max} checks used this hour`;
+        })();
+
         const pendingEmbed = new EmbedBuilder()
             .setColor(0x3498db)
             .setTitle('First Message Detected')
@@ -40,6 +75,7 @@ module.exports = {
             .addFields(
                 { name: 'User', value: `${message.author.tag} (${userId})`, inline: true },
                 { name: 'Channel', value: `#${message.channel.name}`, inline: true },
+                { name: 'Rate Limit', value: usageInfo, inline: true },
                 { name: 'Message', value: message.content.slice(0, 1024) || '(empty)' }
             )
             .setTimestamp();
@@ -49,10 +85,11 @@ module.exports = {
             statusMessage = await automod.send({ embeds: [pendingEmbed] }).catch(() => null);
         }
 
-        // --- Run AI analysis ---
+        // --- Run AI analysis (use guild key if available) ---
         const { safe, raw } = await analyzeFirstMessage(
             message.content,
-            message.author.tag
+            message.author.tag,
+            settings.gemini_api_key
         );
 
         if (safe) {
@@ -82,7 +119,7 @@ module.exports = {
         // 1. Delete the message
         await message.delete().catch(() => { });
 
-        // 2. Timeout the user for 24 hours
+        // 2. Timeout the user
         const member = await message.guild.members
             .fetch(userId)
             .catch(() => null);
