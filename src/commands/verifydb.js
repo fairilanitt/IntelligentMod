@@ -11,6 +11,7 @@ const {
     SlashCommandBuilder,
     PermissionFlagsBits,
     EmbedBuilder,
+    MessageFlags,
 } = require('discord.js');
 const {
     getUser,
@@ -83,7 +84,7 @@ module.exports = {
                 if (!record) {
                     return interaction.reply({
                         content: `No record found for ${target.tag}.`,
-                        ephemeral: true,
+                        flags: MessageFlags.Ephemeral,
                     });
                 }
 
@@ -106,7 +107,7 @@ module.exports = {
                         }
                     );
 
-                return interaction.reply({ embeds: [embed], ephemeral: true });
+                return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
             }
 
             // List all users for this guild
@@ -119,7 +120,7 @@ module.exports = {
             if (records.length === 0) {
                 return interaction.reply({
                     content: 'No records in the verification database.',
-                    ephemeral: true,
+                    flags: MessageFlags.Ephemeral,
                 });
             }
 
@@ -136,7 +137,7 @@ module.exports = {
                 .setDescription(lines.join('\n'))
                 .setFooter({ text: `Page ${page}/${totalPages} | ${total} total records` });
 
-            return interaction.reply({ embeds: [embed], ephemeral: true });
+            return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
         }
 
         if (sub === 'set') {
@@ -154,7 +155,7 @@ module.exports = {
             const label = status === 1 ? 'Verified' : 'Unverified';
             return interaction.reply({
                 content: `${target.tag} has been set to **${label}**.`,
-                ephemeral: true,
+                flags: MessageFlags.Ephemeral,
             });
         }
 
@@ -165,13 +166,13 @@ module.exports = {
             if (result.changes === 0) {
                 return interaction.reply({
                     content: `No record found for ${target.tag}.`,
-                    ephemeral: true,
+                    flags: MessageFlags.Ephemeral,
                 });
             }
 
             return interaction.reply({
                 content: `${target.tag} has been removed from the database.`,
-                ephemeral: true,
+                flags: MessageFlags.Ephemeral,
             });
         }
     },
