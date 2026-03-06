@@ -41,16 +41,14 @@ db.exec(`
     ai_moderation    INTEGER NOT NULL DEFAULT 1,
     automod_channel  TEXT    NOT NULL DEFAULT 'automod',
     timeout_duration INTEGER NOT NULL DEFAULT 86400000,
-    gemini_api_key   TEXT    DEFAULT NULL
+    gemini_api_key   TEXT    DEFAULT NULL,
+    mod_action       TEXT    NOT NULL DEFAULT 'timeout'
   )
 `);
 
-// Migration: add gemini_api_key column if upgrading from older schema
-try {
-  db.exec(`ALTER TABLE guild_settings ADD COLUMN gemini_api_key TEXT DEFAULT NULL`);
-} catch (_) {
-  // Column already exists — ignore
-}
+// Migrations: add columns if upgrading from older schema
+try { db.exec(`ALTER TABLE guild_settings ADD COLUMN gemini_api_key TEXT DEFAULT NULL`); } catch (_) { }
+try { db.exec(`ALTER TABLE guild_settings ADD COLUMN mod_action TEXT NOT NULL DEFAULT 'timeout'`); } catch (_) { }
 
 /* ------------------------------------------------------------------ */
 /*  Prepared statements                                                */
@@ -154,13 +152,14 @@ const stmtGetSettings = db.prepare(`
 `);
 
 const stmtUpsertSettings = db.prepare(`
-  INSERT INTO guild_settings (guild_id, ai_moderation, automod_channel, timeout_duration, gemini_api_key)
-  VALUES (?, ?, ?, ?, ?)
+  INSERT INTO guild_settings (guild_id, ai_moderation, automod_channel, timeout_duration, gemini_api_key, mod_action)
+  VALUES (?, ?, ?, ?, ?, ?)
   ON CONFLICT(guild_id) DO UPDATE SET
     ai_moderation    = excluded.ai_moderation,
     automod_channel  = excluded.automod_channel,
     timeout_duration = excluded.timeout_duration,
-    gemini_api_key   = excluded.gemini_api_key
+    gemini_api_key   = excluded.gemini_api_key,
+    mod_action       = excluded.mod_action
 `);
 
 const DEFAULTS = {
@@ -168,6 +167,7 @@ const DEFAULTS = {
   automod_channel: 'automod',
   timeout_duration: 86400000, // 24h in ms
   gemini_api_key: null,
+  mod_action: 'timeout',
 };
 
 /** Get guild settings, returning defaults if none are stored. */
@@ -183,7 +183,8 @@ function saveSettings(guildId, settings) {
     merged.ai_moderation,
     merged.automod_channel,
     merged.timeout_duration,
-    merged.gemini_api_key
+    merged.gemini_api_key,
+    merged.mod_action
   );
 }
 

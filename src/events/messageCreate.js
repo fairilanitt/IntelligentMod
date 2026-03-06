@@ -119,15 +119,38 @@ module.exports = {
         // 1. Delete the message
         await message.delete().catch(() => { });
 
-        // 2. Timeout the user
+        // 2. Execute configured moderation action
         const member = await message.guild.members
             .fetch(userId)
             .catch(() => null);
 
-        if (member && member.moderatable) {
-            await member
-                .timeout(settings.timeout_duration, 'AI flagged first message as unsafe')
-                .catch(() => { });
+        let actionDescription = 'Message deleted';
+        const action = settings.mod_action || 'timeout';
+
+        if (member) {
+            switch (action) {
+                case 'ban':
+                    if (member.bannable) {
+                        await member.ban({ reason: 'AI flagged first message as unsafe' }).catch(() => { });
+                        actionDescription = 'Message deleted, user banned';
+                    }
+                    break;
+                case 'kick':
+                    if (member.kickable) {
+                        await member.kick('AI flagged first message as unsafe').catch(() => { });
+                        actionDescription = 'Message deleted, user kicked';
+                    }
+                    break;
+                case 'timeout':
+                default:
+                    if (member.moderatable) {
+                        await member
+                            .timeout(settings.timeout_duration, 'AI flagged first message as unsafe')
+                            .catch(() => { });
+                        actionDescription = 'Message deleted, user timed out';
+                    }
+                    break;
+            }
         }
 
         // 3. Update status embed with result
@@ -139,7 +162,7 @@ module.exports = {
                 { name: 'Channel', value: `#${message.channel.name}`, inline: true },
                 { name: 'AI Verdict', value: 'This message was deemed as harmful.', inline: true },
                 { name: 'Message Content', value: message.content.slice(0, 1024) || '(empty)' },
-                { name: 'Action Taken', value: 'Message deleted, user timed out for 24h' }
+                { name: 'Action Taken', value: actionDescription }
             )
             .setTimestamp();
 

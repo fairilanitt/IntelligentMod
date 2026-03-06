@@ -38,42 +38,60 @@ function buildSettingsEmbed(guildId) {
 
     const timeoutLabel = TIMEOUT_LABELS[settings.timeout_duration] ?? `${settings.timeout_duration}ms`;
 
+    const actionLabels = { timeout: 'Timeout', kick: 'Kick', ban: 'Ban' };
+
+    const fields = [
+        {
+            name: 'AI Moderation',
+            value: settings.ai_moderation ? 'On' : 'Off',
+            inline: true,
+        },
+        {
+            name: 'Moderation Action',
+            value: actionLabels[settings.mod_action] || settings.mod_action,
+            inline: true,
+        },
+        {
+            name: 'Automod Channel',
+            value: `#${settings.automod_channel}`,
+            inline: true,
+        },
+    ];
+
+    // Only show timeout duration when action is timeout
+    if (settings.mod_action === 'timeout') {
+        fields.push({
+            name: 'Timeout Duration',
+            value: timeoutLabel,
+            inline: true,
+        });
+    }
+
+    fields.push(
+        {
+            name: 'Custom API Key',
+            value: hasKey ? 'Set (rate limit bypassed)' : 'Not set',
+            inline: true,
+        },
+        {
+            name: 'Rate Limit Usage',
+            value: hasKey ? 'N/A (custom key)' : `${usage.used}/${usage.max} this hour`,
+            inline: true,
+        }
+    );
+
     return new EmbedBuilder()
         .setColor(0x5865f2)
         .setTitle('Server Settings')
         .setDescription('Use the buttons below to configure the bot.')
-        .addFields(
-            {
-                name: 'AI Moderation',
-                value: settings.ai_moderation ? 'On' : 'Off',
-                inline: true,
-            },
-            {
-                name: 'Automod Channel',
-                value: `#${settings.automod_channel}`,
-                inline: true,
-            },
-            {
-                name: 'Timeout Duration',
-                value: timeoutLabel,
-                inline: true,
-            },
-            {
-                name: 'Custom API Key',
-                value: hasKey ? 'Set (rate limit bypassed)' : 'Not set',
-                inline: true,
-            },
-            {
-                name: 'Rate Limit Usage',
-                value: hasKey ? 'N/A (custom key)' : `${usage.used}/${usage.max} this hour`,
-                inline: true,
-            }
-        );
+        .addFields(fields);
 }
 
 /** Build the button rows. */
 function buildButtons(guildId) {
     const settings = getSettings(guildId);
+
+    const actionLabels = { timeout: 'Timeout', kick: 'Kick', ban: 'Ban' };
 
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
@@ -81,16 +99,21 @@ function buildButtons(guildId) {
             .setLabel(settings.ai_moderation ? 'Disable AI Moderation' : 'Enable AI Moderation')
             .setStyle(settings.ai_moderation ? ButtonStyle.Danger : ButtonStyle.Success),
         new ButtonBuilder()
+            .setCustomId('settings_cycle_action')
+            .setLabel(`Action: ${actionLabels[settings.mod_action]}`)
+            .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
             .setCustomId('settings_edit_channel')
             .setLabel('Set Channel')
             .setStyle(ButtonStyle.Secondary),
+    );
+
+    const row2Components = [
         new ButtonBuilder()
             .setCustomId('settings_edit_timeout')
             .setLabel('Set Timeout')
-            .setStyle(ButtonStyle.Secondary),
-    );
-
-    const row2 = new ActionRowBuilder().addComponents(
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(settings.mod_action !== 'timeout'),
         new ButtonBuilder()
             .setCustomId('settings_edit_apikey')
             .setLabel(settings.gemini_api_key ? 'Change API Key' : 'Set API Key')
@@ -100,7 +123,9 @@ function buildButtons(guildId) {
             .setLabel('Clear API Key')
             .setStyle(ButtonStyle.Danger)
             .setDisabled(!settings.gemini_api_key),
-    );
+    ];
+
+    const row2 = new ActionRowBuilder().addComponents(row2Components);
 
     return [row1, row2];
 }
@@ -131,6 +156,19 @@ module.exports = {
             const settings = getSettings(guildId);
             const newValue = settings.ai_moderation ? 0 : 1;
             saveSettings(guildId, { ai_moderation: newValue });
+
+            const embed = buildSettingsEmbed(guildId);
+            const buttons = buildButtons(guildId);
+            await interaction.update({ embeds: [embed], components: buttons });
+            return;
+        }
+
+        // --- Button: Cycle moderation action (timeout → kick → ban → timeout) ---
+        if (interaction.customId === 'settings_cycle_action') {
+            const settings = getSettings(guildId);
+            const cycle = { timeout: 'kick', kick: 'ban', ban: 'timeout' };
+            const next = cycle[settings.mod_action] || 'timeout';
+            saveSettings(guildId, { mod_action: next });
 
             const embed = buildSettingsEmbed(guildId);
             const buttons = buildButtons(guildId);
